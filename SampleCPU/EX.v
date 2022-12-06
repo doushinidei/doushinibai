@@ -8,7 +8,7 @@ module EX(
     input wire [`ID_TO_EX_WD-1:0] id_to_ex_bus,
 
     output wire [`EX_TO_MEM_WD-1:0] ex_to_mem_bus,
-
+    output wire [`EX_TO_RF_WD-1:0] ex_to_rf_bus,
     output wire data_sram_en,
     output wire [3:0] data_sram_wen,
     output wire [31:0] data_sram_addr,
@@ -92,6 +92,11 @@ module EX(
         rf_waddr,       // 36:32
         ex_result       // 31:0
     };
+   assign ex_to_rf_bus={
+        rf_we,
+        rf_waddr,
+        ex_result,
+    }
 
     // MUL part
     wire [63:0] mul_result;
