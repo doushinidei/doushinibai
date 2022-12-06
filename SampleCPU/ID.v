@@ -12,6 +12,8 @@ module ID(
     input wire [31:0] inst_sram_rdata,
 
     input wire [`WB_TO_RF_WD-1:0] wb_to_rf_bus,
+    input wire [`MEM_TO_RF_WD-1:0] mem_to_rf_bus,
+    input wire [`EX_TO_RF_WD-1:0] ex_to_rf_bus,
 
     output wire [`ID_TO_EX_WD-1:0] id_to_ex_bus,
 
@@ -26,7 +28,20 @@ module ID(
     wire wb_rf_we;
     wire [4:0] wb_rf_waddr;
     wire [31:0] wb_rf_wdata;
-
+    wire ex_rf_we;
+    wire [4:0] ex_rf_waddr;
+    wire [31:0] ex_rf_wdata;
+    wire mem_rf_we;
+    wire [4:0] mem_rf_waddr;
+    wire [31:0] mem_rf_wdata;
+    wire ex_hi_we,mem_hi_we,wb_hi_we;
+    wire ex_lo_we,mem_lo_we,wb_lo_we;
+    wire [31:0] ex_hi_i,mem_hi_i,wb_hi_i;
+    wire [31:0] ex_lo_i,mem_lo_i,wb_lo_i;
+    wire[31:0] hi_o,lo_0;
+    wire[31:0] hi,lo;
+    reg flag;
+    reg [31:0] bins;
     always @ (posedge clk) begin
         if (rst) begin
             if_to_id_bus_r <= `IF_TO_ID_WD'b0;        
