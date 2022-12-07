@@ -102,7 +102,7 @@ module EX(
         .resetn     (~rst           ),
         .mul_signed (mul_signed     ),
         .ina        ( rf_rdata1   ), // 乘法源操作数1
-        .inb        (  rf_rdata2    ), // 乘法源操作数2
+        .inb        (  rf_rdata2  ), // 乘法源操作数2
         .result     (mul_result     ) // 乘法结果 64bit
     );
 
