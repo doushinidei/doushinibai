@@ -4,7 +4,6 @@ module ID(
     input wire rst,
     // input wire flush,
     input wire [`StallBus-1:0] stall,
-    
     output wire stallreq,
 
     input wire [`IF_TO_ID_WD-1:0] if_to_id_bus,
@@ -12,47 +11,38 @@ module ID(
     input wire [31:0] inst_sram_rdata,
 
     input wire [`WB_TO_RF_WD-1:0] wb_to_rf_bus,
+    input wire [`MEM_TO_RF_WD-1:0] mem_to_rf_bus,
+    input wire [`EX_TO_RF_WD-1:0] ex_to_rf_bus,
 
     output wire [`ID_TO_EX_WD-1:0] id_to_ex_bus,
 
-    output wire [`BR_WD-1:0] br_bus 
+    output wire [`BR_WD-1:0] br_bus,
+    output wire stallreq_for_load
 );
 
     reg [`IF_TO_ID_WD-1:0] if_to_id_bus_r;
     wire [31:0] inst;
     wire [31:0] id_pc;
     wire ce;
-
+  
     wire wb_rf_we;
     wire [4:0] wb_rf_waddr;
     wire [31:0] wb_rf_wdata;
-
-    always @ (posedge clk) begin
-        if (rst) begin
-            if_to_id_bus_r <= `IF_TO_ID_WD'b0;        
-        end
-        // else if (flush) begin
-        //     ic_to_id_bus <= `IC_TO_ID_WD'b0;
-        // end
-        else if (stall[1]==`Stop && stall[2]==`NoStop) begin
-            if_to_id_bus_r <= `IF_TO_ID_WD'b0;
-        end
-        else if (stall[1]==`NoStop) begin
-            if_to_id_bus_r <= if_to_id_bus;
-        end
-    end
+    wire ex_rf_we;
+    wire [4:0] ex_rf_waddr;
+    wire [31:0] ex_rf_wdata;
+    wire mem_rf_we;
+    wire [4:0] mem_rf_waddr;
+    wire [31:0] mem_rf_wdata;
+    wire ex_hi_we,mem_hi_we,wb_hi_we;
+    wire ex_lo_we,mem_lo_we,wb_lo_we;
+    wire [31:0] ex_hi_i,mem_hi_i,wb_hi_i;
+    wire [31:0] ex_lo_i,mem_lo_i,wb_lo_i;
+    wire[31:0] hi_o,lo_0;
+    wire[31:0] hi,lo;
+    reg flag;
+    reg [31:0] bins;
     
-    assign inst = inst_sram_rdata;
-    assign {
-        ce,
-        id_pc
-    } = if_to_id_bus_r;
-    assign {
-        wb_rf_we,
-        wb_rf_waddr,
-        wb_rf_wdata
-    } = wb_to_rf_bus;
-
     wire [5:0] opcode;
     wire [4:0] rs,rt,rd,sa;
     wire [5:0] func;
@@ -62,54 +52,17 @@ module ID(
     wire [4:0] base;
     wire [15:0] offset;
     wire [2:0] sel;
-
     wire [63:0] op_d, func_d;
     wire [31:0] rs_d, rt_d, rd_d, sa_d;
-
-    wire [2:0] sel_alu_src1;
-    wire [3:0] sel_alu_src2;
-    wire [11:0] alu_op;
-
-    wire data_ram_en;
-    wire [3:0] data_ram_wen;
     
-    wire rf_we;
-    wire [4:0] rf_waddr;
-    wire sel_rf_res;
-    wire [2:0] sel_rf_dst;
-
-    wire [31:0] rdata1, rdata2;
-
-    regfile u_regfile(
-    	.clk    (clk    ),
-        .raddr1 (rs ),
-        .rdata1 (rdata1 ),
-        .raddr2 (rt ),
-        .rdata2 (rdata2 ),
-        .we     (wb_rf_we     ),
-        .waddr  (wb_rf_waddr  ),
-        .wdata  (wb_rf_wdata  )
-    );
-
-    assign opcode = inst[31:26];
-    assign rs = inst[25:21];
-    assign rt = inst[20:16];
-    assign rd = inst[15:11];
-    assign sa = inst[10:6];
-    assign func = inst[5:0];
-    assign imm = inst[15:0];
-    assign instr_index = inst[25:0];
-    assign code = inst[25:6];
-    assign base = inst[25:21];
-    assign offset = inst[15:0];
-    assign sel = inst[2:0];
-
     wire inst_ori, inst_lui, inst_addiu, inst_beq;
+    
+    
 
     wire op_add, op_sub, op_slt, op_sltu;
     wire op_and, op_nor, op_or, op_xor;
     wire op_sll, op_srl, op_sra, op_lui;
-
+    
     decoder_6_64 u0_decoder_6_64(
     	.in  (opcode  ),
         .out (op_d )
@@ -129,6 +82,103 @@ module ID(
     	.in  (rt  ),
         .out (rt_d )
     );
+
+
+    wire [2:0] sel_alu_src1;
+    wire [3:0] sel_alu_src2;
+    wire [11:0] alu_op;
+
+    wire data_ram_en;
+    wire [3:0] data_ram_wen;
+    
+    wire rf_we;
+    wire [4:0] rf_waddr;
+    wire sel_rf_res;
+    wire [2:0] sel_rf_dst;
+    wire [31:0]  rf_rdata1,rf_rdata2,rdata1,rdata2;
+    wire[31:0] bru_rdata1,bru_rdata2;
+    regfile u_regfile(
+    	.clk    (clk    ),
+        .raddr1 (rs ),
+        .rdata1 (rdata1 ),
+        .raddr2 (rt ),
+        .rdata2 (rdata2 ),
+        .we     (wb_rf_we     ),
+        .waddr  (wb_rf_waddr  ),
+        .wdata  (wb_rf_wdata  )
+    );
+    wire br_e;
+    wire [31:0] br_addr;
+    wire rs_eq_rt;
+    wire rs_ge_z;
+    wire rs_gt_z;
+    wire rs_le_z;
+    wire rs_lt_z;
+    wire [31:0] pc_plus_4;
+    always @ (posedge clk) begin
+        if (rst) begin
+            if_to_id_bus_r <= `IF_TO_ID_WD'b0; 
+            flag<=1'b0;
+           
+
+        end
+        // else if (flush) begin
+        //     ic_to_id_bus <= `IC_TO_ID_WD'b0;
+        // end
+        else if (stall[1]==`Stop && stall[2]==`NoStop) begin
+            if_to_id_bus_r <= `IF_TO_ID_WD'b0;
+            flag<=1'b0;
+        end
+        else if (stall[1]==`NoStop) begin
+            if_to_id_bus_r <= if_to_id_bus;
+            flag<=1'b0;
+        end
+        else if( stall[2]==`Stop )begin
+            
+           flag<=1'b1;
+           
+        end      
+    end
+    assign inst=flag ? inst :inst_sram_rdata;
+    assign {
+        ce,
+        id_pc
+    } = if_to_id_bus_r;
+    
+    assign {
+        ex_rf_we,
+        ex_rf_waddr,
+        ex_rf_wdata
+    } = ex_to_rf_bus;
+    
+    assign {
+        wb_rf_we,
+        wb_rf_waddr,
+        wb_rf_wdata
+    } = wb_to_rf_bus;
+    
+    assign {
+        mem_rf_we,
+        mem_rf_waddr,
+        mem_rf_wdata
+    } = mem_to_rf_bus;
+
+    assign rf_data1=(wb_rf_we &(wb_rf_waddr==rs)) ? wb_rf_wdata :rdata1;
+    assign rf_data2=(wb_rf_we &(wb_rf_waddr==rt)) ? wb_rf_wdata :rdata2;
+
+    assign opcode = inst[31:26];
+    assign rs = inst[25:21];
+    assign rt = inst[20:16];
+    assign rd = inst[15:11];
+    assign sa = inst[10:6];
+    assign func = inst[5:0];
+    assign imm = inst[15:0];
+    assign instr_index = inst[25:0];
+    assign code = inst[25:6];
+    assign base = inst[25:21];
+    assign offset = inst[15:0];
+    assign sel = inst[2:0];
+
 
     
     assign inst_ori     = op_d[6'b00_1101];
@@ -207,8 +257,27 @@ module ID(
                     | {5{sel_rf_dst[2]}} & 32'd31;
 
     // 0 from alu_res ; 1 from ld_res
+    wire [31:0] forwarding_rs;
+    wire [31:0] forwarding_rt;
+    wire rsex_if, rtex_if;
+    wire rsmem_if, rtmem_if;
     assign sel_rf_res = 1'b0; 
+    assign rsex_if = (rs == ex_rf_waddr) && ex_rf_we ? 1'b1 : 1'b0 ;
+    assign rtex_if = (rt == ex_rf_waddr) && ex_rf_we ? 1'b1 : 1'b0 ;
+    assign rsmem_if = (rs == mem_rf_waddr) && mem_rf_we ? 1'b1 : 1'b0 ;
+    assign rtmem_if = (rt == mem_rf_waddr) && mem_rf_we ? 1'b1 : 1'b0 ;
 
+    assign sel_rs_forward = rsex_if |rsmem_if;
+    assign sel_rt_forward = rtex_if |rtmem_if;
+
+    assign forwarding_rs= rsex_if ? ex_rf_wdata :
+                             rsem_if? mem_rf_wdata:
+                             32'b0;
+    assign forwarding_rs = rtex_if ? ex_rf_wdata :
+                             rtmem_if? mem_rf_wdata:
+                             32'b0;
+    assign rdata1_fd = sel_rs_forward ? forwarding_rs : rf_data1;
+    assign rdata2_fd = sel_rt_forward ? forwarding_rt: rf_data2;
     assign id_to_ex_bus = {
         id_pc,          // 158:127
         inst,           // 126:95
@@ -220,22 +289,13 @@ module ID(
         rf_we,          // 70
         rf_waddr,       // 69:65
         sel_rf_res,     // 64
-        rdata1,         // 63:32
-        rdata2          // 31:0
+        rdata1_fd,         // 63:32
+        rdata2_fd         // 31:0
     };
 
-
-    wire br_e;
-    wire [31:0] br_addr;
-    wire rs_eq_rt;
-    wire rs_ge_z;
-    wire rs_gt_z;
-    wire rs_le_z;
-    wire rs_lt_z;
-    wire [31:0] pc_plus_4;
     assign pc_plus_4 = id_pc + 32'h4;
 
-    assign rs_eq_rt = (rdata1 == rdata2);
+    assign rs_eq_rt = (rdata1_fd == rdata2_fd);
 
     assign br_e = inst_beq & rs_eq_rt;
     assign br_addr = inst_beq ? (pc_plus_4 + {{14{inst[15]}},inst[15:0],2'b0}) : 32'b0;
@@ -244,7 +304,4 @@ module ID(
         br_e,
         br_addr
     };
-    
-
-
 endmodule
