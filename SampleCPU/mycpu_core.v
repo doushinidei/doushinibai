@@ -25,13 +25,16 @@ module mycpu_core(
     wire [`ID_TO_EX_WD-1:0] id_to_ex_bus;
     wire [`EX_TO_MEM_WD-1:0] ex_to_mem_bus;
     wire [`MEM_TO_WB_WD-1:0] mem_to_wb_bus;
-    wire [`WB_TO_ID_WD-1:0] wb_to_id_bus;
-    wire [`MEM_TO_ID_WD-1:0] mem_to_id_bus;
-    wire [`EX_TO_ID_WD-1:0] ex_to_id_bus;
     wire [`BR_WD-1:0] br_bus; 
     wire [`DATA_SRAM_WD-1:0] ex_dt_sram_bus;
     wire [`WB_TO_RF_WD-1:0] wb_to_rf_bus;
+    wire [`EX_TO_ID_WD-1:0] ex_to_id_bus;       //data connect
+    wire [`MEM_TO_ID_WD-1:0] mem_to_id_bus;
+    wire [`WB_TO_ID_WD-1:0] wb_to_id_bus;       //data connect
     wire [`StallBus-1:0] stall;
+
+    wire loading;
+    wire stallreq;
 
     IF u_IF(
     	.clk             (clk             ),
@@ -49,14 +52,15 @@ module mycpu_core(
     ID u_ID(
     	.clk             (clk             ),
         .rst             (rst             ),
+        .loading         (loading         ),
         .stall           (stall           ),
         .stallreq        (stallreq        ),
         .if_to_id_bus    (if_to_id_bus    ),
+        .ex_to_id_bus    (ex_to_id_bus    ),    //data connect
+        .mem_to_id_bus    (mem_to_id_bus    ),
+        .wb_to_id_bus    (wb_to_id_bus    ),    //data connect
         .inst_sram_rdata (inst_sram_rdata ),
         .wb_to_rf_bus    (wb_to_rf_bus    ),
-        .ex_to_id_bus    (ex_to_id_bus    ),
-        .wb_to_id_bus    (wb_to_id_bus    ),
-        .mem_to_id_bus    (mem_to_id_bus    ),
         .id_to_ex_bus    (id_to_ex_bus    ),
         .br_bus          (br_bus          )
     );
@@ -67,12 +71,12 @@ module mycpu_core(
         .stall           (stall           ),
         .id_to_ex_bus    (id_to_ex_bus    ),
         .ex_to_mem_bus   (ex_to_mem_bus   ),
-        .ex_to_id_bus    (ex_to_id_bus    ),
+        .ex_to_id_bus   (ex_to_id_bus   ),      //data connect
         .data_sram_en    (data_sram_en    ),
         .data_sram_wen   (data_sram_wen   ),
         .data_sram_addr  (data_sram_addr  ),
-        .data_sram_wdata (data_sram_wdata )
-
+        .data_sram_wdata (data_sram_wdata ),
+        .loading         (loading)
     );
 
     MEM u_MEM(
@@ -82,7 +86,7 @@ module mycpu_core(
         .ex_to_mem_bus   (ex_to_mem_bus   ),
         .data_sram_rdata (data_sram_rdata ),
         .mem_to_wb_bus   (mem_to_wb_bus   ),
-        .mem_to_id_bus   (mem_to_id_bus   )
+        .mem_to_id_bus   (mem_to_id_bus   )     //data connect
     );
     
     WB u_WB(
@@ -100,6 +104,7 @@ module mycpu_core(
 
     CTRL u_CTRL(
     	.rst   (rst   ),
+        .stallreq (stallreq),
         .stall (stall )
     );
     
